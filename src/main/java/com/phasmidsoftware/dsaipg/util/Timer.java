@@ -64,9 +64,36 @@ public class Timer {
      * @return the average milliseconds per repetition.
      */
     public <T, U> double repeat(int n, boolean warmup, Supplier<T> supplier, Function<T, U> function, UnaryOperator<T> preFunction, Consumer<U> postFunction) {
-        // TO BE IMPLEMENTED : note that the timer is running when this method is called and should still be running when it returns.
-         return 0;
-        // END SOLUTION
+        // 循环 n 次，每次记录一次“圈”
+        for (int i = 0; i < n; i++) {
+            // 通过 supplier 获取输入值（这部分时间被计入）
+            T t = supplier.get();
+
+            // 如果提供了 preFunction，则暂停计时，不计入预处理时间
+            if (preFunction != null) {
+                pause(); // 暂停计时
+                t = preFunction.apply(t);
+                resume(); // 恢复计时
+            }
+
+            // 在计时状态下调用目标函数
+            U u = function.apply(t);
+
+            // 记录一次“圈”，结束本次测量
+            lap();
+
+            // 如果提供了 postFunction，则暂停计时，不计入后处理时间
+            if (postFunction != null) {
+                pause();
+                postFunction.accept(u);
+                resume();
+            }
+        }
+        // 循环结束后暂停计时，以便计算平均时间
+        pause();
+        double result = meanLapTime();
+        resume(); // 恢复计时，使 Timer 在返回时依然处于运行状态
+        return result;
     }
 
     /**
@@ -239,9 +266,8 @@ public class Timer {
      * @return the number of ticks for the system clock. Currently defined as nano time.
      */
     private static long getClock() {
-        // TO BE IMPLEMENTED 
-         return 0;
-        // END SOLUTION
+        // 使用纳秒级别的系统时钟
+        return System.nanoTime();
     }
 
     /**
@@ -252,9 +278,8 @@ public class Timer {
      * @return the corresponding number of milliseconds.
      */
     private static double toMillisecs(long ticks) {
-        // TO BE IMPLEMENTED 
-         return 0;
-        // END SOLUTION
+        // 将纳秒转换为毫秒
+        return ticks / 1_000_000.0;
     }
 
     final static LazyLogger logger = new LazyLogger(Timer.class);
