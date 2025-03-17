@@ -6,82 +6,75 @@ package com.phasmidsoftware.dsaipg.sort.par;
 
 import java.util.Arrays;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ForkJoinPool;
 
-/**
- * ParSort is a class implementing a parallel sorting algorithm.
- * The sorting is executed using a fork-and-join approach,
- * where large arrays are divided into smaller portions and sorted concurrently.
- * Designed to optimize performance for sorting large integer arrays.
- * This code has been fleshed out by...
- * @author Ziyao Qiao. Thanks very much.
- */
 final class ParSort {
 
     /**
-     * Specifies the cutoff value used to determine when to switch from parallel sorting
-     * to single-threaded sorting. If the size of the range to be sorted is smaller than
-     * this value, {@link Arrays#sort} is used for single-threaded sorting. Otherwise,
-     * the range is divided into smaller subarrays, which are sorted in parallel.
-     * A larger cutoff value reduces the overhead of thread management but may limit
-     * the advantages of parallelism.
+     * cutoff：如果待排序数组长度小于此值，则直接顺序排序。
      */
-    public static int cutoff = 1000;
+    public static int cutoff = 1000000;
 
     /**
-     * Sorts the specified portion of the input array using a parallel sorting algorithm.
-     * If the range to be sorted is smaller than a predefined cutoff value, the method
-     * utilizes a single-threaded sorting based on {@link Arrays#sort}. For larger ranges,
-     * the array is divided into subarrays which are recursively sorted concurrently,
-     * and the results are merged into a single sorted array.
+     * 对数组 array[from, to) 进行排序。
+     * 如果子数组长度小于 cutoff，则采用顺序排序；否则使用递归并行排序。
      *
-     * @param array the array to be sorted
-     * @param from  the starting index (inclusive) of the portion of the array to be sorted
-     * @param to    the ending index (exclusive) of the portion of the array to be sorted
+     * @param array 要排序的数组
+     * @param from  起始索引（包含）
+     * @param to    结束索引（不包含）
      */
     public static void sort(int[] array, int from, int to) {
-        if (to - from >= cutoff) {
-            CompletableFuture<int[]> completableFuture1 = null;
-            CompletableFuture<int[]> completableFuture2 = null;
-            // TO BE IMPLEMENTED 
-            // END SOLUTION
-            CompletableFuture<int[]> completableFuture = completableFuture1.thenCombine(completableFuture2, ParSort::doMerge);
-            completableFuture.whenComplete((result, throwable) -> System.arraycopy(result, 0, array, from, result.length));
-            completableFuture.join();
-        } else
+        if (to - from < cutoff) {
             Arrays.sort(array, from, to);
+        } else {
+            // 初始递归深度：例如使用 commonPool 并行度，取对数计算一个合理的深度
+            int defaultDepth = (int) (Math.log(ForkJoinPool.getCommonPoolParallelism()) / Math.log(2));
+            // 调用递归排序方法
+            int[] sorted = sortRecursive(array, from, to, defaultDepth);
+            System.arraycopy(sorted, 0, array, from, sorted.length);
+        }
     }
 
     /**
-     * Recursively sorts a specified portion of the input array and returns a new sorted array.
-     * This method extracts the specified range, sorts it using a defined sorting mechanism,
-     * and provides the sorted result as a new array, leaving the input array unchanged.
+     * 递归排序 array[from, to)，并返回一个新的已排序数组。
+     * 使用 depth 参数控制并行递归层数：当 depth <= 0 或数组大小小于 cutoff 时，转为顺序排序。
      *
-     * @param array the input array from which a portion will be sorted
-     * @param from  the starting index (inclusive) of the portion of the array to be sorted
-     * @param to    the ending index (exclusive) of the portion of the array to be sorted
-     * @return a new sorted array containing the elements from the specified range of the input array
+     * @param array 要排序的数组
+     * @param from  起始索引（包含）
+     * @param to    结束索引（不包含）
+     * @param depth 当前允许的最大并行递归层数
+     * @return 新的已排序数组
      */
-    static int[] sortRecursive(int[] array, int from, int to) {
-        int[] result = new int[to - from];
-        // TO BE IMPLEMENTED 
-         // NOTE you need to do something here so that result is the sorted version of array.
-        // END SOLUTION
-        return result;
+    static int[] sortRecursive(int[] array, int from, int to, int depth) {
+        if ((to - from) < cutoff || depth <= 0) {
+            // 当数组区间较小或达到递归深度限制时，直接复制子数组并进行顺序排序
+            int[] result = Arrays.copyOfRange(array, from, to);
+            Arrays.sort(result);
+            return result;
+        } else {
+            int mid = (from + to) / 2;
+            // 异步递归排序左半部分和右半部分，递归深度减 1
+            CompletableFuture<int[]> leftFuture = CompletableFuture.supplyAsync(
+                    () -> sortRecursive(array, from, mid, depth - 1)
+            );
+            CompletableFuture<int[]> rightFuture = CompletableFuture.supplyAsync(
+                    () -> sortRecursive(array, mid, to, depth - 1)
+            );
+            // 合并两个排序结果
+            return leftFuture.thenCombine(rightFuture, ParSort::doMerge).join();
+        }
     }
 
     /**
-     * Merges two sorted arrays into a single sorted array.
-     * The method assumes that both input arrays are already sorted in ascending order,
-     * and combines them into a new sorted array.
+     * 合并两个已排序的数组为一个新的已排序数组。
      *
-     * @param xs1 the first sorted input array
-     * @param xs2 the second sorted input array
-     * @return a new sorted array containing all elements from both input arrays
+     * @param xs1 第一个排序数组
+     * @param xs2 第二个排序数组
+     * @return 合并后的新数组
      */
     static int[] doMerge(int[] xs1, int[] xs2) {
         int[] result = new int[xs1.length + xs2.length];
-        int i = 0;
-        int j = 0;
+        int i = 0, j = 0;
         for (int k = 0; k < result.length; k++) {
             if (i >= xs1.length) result[k] = xs2[j++];
             else if (j >= xs2.length) result[k] = xs1[i++];
@@ -92,18 +85,20 @@ final class ParSort {
     }
 
     /**
-     * Asynchronously sorts the specified portion of the input array using a parallel sorting algorithm.
-     * This method extracts a subsection of the given array, sorts it, and returns a CompletableFuture
-     * containing the sorted portion of the array.
+     * 异步排序 array[from, to) 的一个辅助方法，
+     * 如果需要使用自定义线程池，可以在此处传入自己的 ForkJoinPool。
      *
-     * @param array the input array to extract and sort
-     * @param from  the starting index (inclusive) of the portion of the array to be sorted
-     * @param to    the ending index (exclusive) of the portion of the array to be sorted
-     * @return a CompletableFuture containing the sorted section of the array
+     * @param array 要排序的数组
+     * @param from  起始索引（包含）
+     * @param to    结束索引（不包含）
+     * @return 包含排序结果的 CompletableFuture
      */
     static CompletableFuture<int[]> asyncSort(int[] array, int from, int to) {
-        return CompletableFuture.supplyAsync(
-                () -> sortRecursive(array, from, to)
-        );
+        // 如需自定义线程数，可使用如下方式：
+        // ForkJoinPool myPool = new ForkJoinPool(customThreadCount);
+        // return CompletableFuture.supplyAsync(() -> sortRecursive(array, from, to, defaultDepth), myPool);
+        return CompletableFuture.supplyAsync(() -> sortRecursive(array, from, to,
+                (int) (Math.log(ForkJoinPool.getCommonPoolParallelism()) / Math.log(2))
+        ));
     }
 }
