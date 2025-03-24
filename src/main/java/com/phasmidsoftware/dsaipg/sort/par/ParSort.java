@@ -13,7 +13,7 @@ final class ParSort {
     /**
      * cutoff：如果待排序数组长度小于此值，则直接顺序排序。
      */
-    public static int cutoff = 1000000;
+    public static int cutoff = 900000;
 
     /**
      * 对数组 array[from, to) 进行排序。
